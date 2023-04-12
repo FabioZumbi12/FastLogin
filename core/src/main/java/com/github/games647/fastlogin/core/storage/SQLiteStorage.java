@@ -105,7 +105,7 @@ public class SQLiteStorage extends SQLStorage {
 
     @Override
     public void createTables() throws SQLException {
-        try (Connection con = dataSource.getConnection();
+        try (Connection con = getConnection();
              Statement createStmt = con.createStatement()) {
             // SQLite has a different syntax for auto increment
             createStmt.executeUpdate(CREATE_TABLE_STMT.replace("AUTO_INCREMENT", "AUTOINCREMENT"));

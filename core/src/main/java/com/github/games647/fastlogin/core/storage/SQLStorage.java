@@ -67,6 +67,15 @@ public abstract class SQLStorage implements AuthStorage {
 
     protected final FastLoginCore<?, ?, ?> core;
     protected final HikariDataSource dataSource;
+    protected Connection con;
+
+    public Connection getConnection() throws SQLException {
+        if (con != null && !con.isClosed()) {
+            con.close();
+        }
+        con = dataSource.getConnection();
+        return con;
+    }
 
     public SQLStorage(FastLoginCore<?, ?, ?> core, HikariConfig config) {
         this.core = core;
@@ -86,7 +95,7 @@ public abstract class SQLStorage implements AuthStorage {
         // name cannot be PK, because it can be changed for premium players
 
         //todo: add unique uuid index usage
-        try (Connection con = dataSource.getConnection();
+        try (Connection con = getConnection();
              Statement createStmt = con.createStatement()) {
             createStmt.executeUpdate(CREATE_TABLE_STMT);
         }
@@ -94,38 +103,41 @@ public abstract class SQLStorage implements AuthStorage {
 
     @Override
     public StoredProfile loadProfile(String name) {
-        try (Connection con = dataSource.getConnection();
+        StoredProfile result = null;
+        try (Connection con = getConnection();
              PreparedStatement loadStmt = con.prepareStatement(LOAD_BY_NAME)
         ) {
             loadStmt.setString(1, name);
 
             try (ResultSet resultSet = loadStmt.executeQuery()) {
-                return parseResult(resultSet).orElseGet(() -> new StoredProfile(null, name, false, ""));
+                result = parseResult(resultSet).orElseGet(() -> new StoredProfile(null, name, false, ""));
             }
         } catch (SQLException sqlEx) {
             core.getPlugin().getLog().error("Failed to query profile: {}", name, sqlEx);
         }
 
-        return null;
+        return result;
     }
 
     @Override
     public StoredProfile loadProfile(UUID uuid) {
-        try (Connection con = dataSource.getConnection();
+        StoredProfile result = null;
+        try (Connection con = getConnection();
              PreparedStatement loadStmt = con.prepareStatement(LOAD_BY_UUID)) {
             loadStmt.setString(1, UUIDAdapter.toMojangId(uuid));
 
             try (ResultSet resultSet = loadStmt.executeQuery()) {
-                return parseResult(resultSet).orElse(null);
+                result = parseResult(resultSet).orElse(null);
             }
         } catch (SQLException sqlEx) {
             core.getPlugin().getLog().error("Failed to query profile: {}", uuid, sqlEx);
         }
 
-        return null;
+        return result;
     }
 
     private Optional<StoredProfile> parseResult(ResultSet resultSet) throws SQLException {
+        Optional<StoredProfile> result = Optional.empty();
         if (resultSet.next()) {
             long userId = resultSet.getInt(1);
 
@@ -135,15 +147,15 @@ public abstract class SQLStorage implements AuthStorage {
             boolean premium = resultSet.getBoolean(4);
             String lastIp = resultSet.getString(5);
             Instant lastLogin = resultSet.getTimestamp(6).toInstant();
-            return Optional.of(new StoredProfile(userId, uuid, name, premium, lastIp, lastLogin));
+            result = Optional.of(new StoredProfile(userId, uuid, name, premium, lastIp, lastLogin));
         }
 
-        return Optional.empty();
+        return result;
     }
 
     @Override
     public void save(StoredProfile playerProfile) {
-        try (Connection con = dataSource.getConnection()) {
+        try (Connection con = getConnection()) {
             String uuid = playerProfile.getOptId().map(UUIDAdapter::toMojangId).orElse(null);
 
             playerProfile.getSaveLock().lock();
